@@ -25,10 +25,12 @@ from dataclasses import dataclass, field
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
-from starlette.routing import Route, Mount
+from starlette.routing import Route, Mount, Mount
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse, Response
 from starlette.exceptions import HTTPException
+from starlette.staticfiles import StaticFiles
+from pathlib import Path
 
 import httpx
 
@@ -47,6 +49,10 @@ from .paper import Paper
 HOST = os.getenv("PAPER_SEARCH_HOST", "0.0.0.0")
 PORT = int(os.getenv("PAPER_SEARCH_PORT", "8090"))
 DEBUG = os.getenv("PAPER_SEARCH_DEBUG", "false").lower() in ("true", "1", "yes")
+
+# Downloads directory for PDFs
+DOWNLOADS_DIR = Path(os.getenv("PAPER_SEARCH_DOWNLOADS", "./downloads")).resolve()
+DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Server version
 VERSION = "0.1.3"
@@ -521,7 +527,9 @@ async def download_paper(request: Request) -> JSONResponse:
     
     try:
         searcher = searchers[platform]
-        file_path = searcher.download_pdf(paper_id, save_path)
+        # Use configured downloads directory for URL-accessible storage
+        actual_save_path = str(DOWNLOADS_DIR) if save_path == "./downloads" else save_path
+        file_path = searcher.download_pdf(paper_id, actual_save_path)
         download_time_ms = int((time.time() - start_time) * 1000)
         
         # Get file size if possible
@@ -529,23 +537,34 @@ async def download_paper(request: Request) -> JSONResponse:
         if os.path.exists(file_path):
             file_size = os.path.getsize(file_path)
         
+        # Generate download URL if file is in the downloads directory
+        download_url = None
+        if actual_save_path == str(DOWNLOADS_DIR) and os.path.exists(file_path):
+            filename = Path(file_path).name
+            download_url = f"http://{HOST}:{PORT}/downloads/{filename}"
+        
         # Broadcast download completed event
         await sse_manager.broadcast("download_completed", {
             "platform": platform,
             "paper_id": paper_id,
             "file_path": file_path,
+            "download_url": download_url,
             "file_size_bytes": file_size,
             "download_time_ms": download_time_ms
         })
         
-        return JSONResponse({
+        response_data = {
             "success": True,
             "file_path": file_path,
             "file_size_bytes": file_size,
             "download_time_ms": download_time_ms,
             "platform": platform,
             "paper_id": paper_id
-        })
+        }
+        if download_url:
+            response_data["download_url"] = download_url
+        
+        return JSONResponse(response_data)
         
     except NotImplementedError as e:
         return create_error_response(
@@ -993,9 +1012,18 @@ async def execute_tool(tool_name: str, arguments: dict) -> dict:
         
     elif tool_info["type"] == "download":
         paper_id = str(arguments.get("paper_id", ""))
-        save_path = str(arguments.get("save_path", "./downloads"))
-        file_path = searcher.download_pdf(paper_id, save_path)
-        return {"content": [{"type": "text", "text": f"Downloaded to: {file_path}"}]}
+        # Always use configured downloads directory for URL generation
+        try:
+            file_path = searcher.download_pdf(paper_id, str(DOWNLOADS_DIR))
+            # Check if download was successful (file_path should be a valid path, not an error message)
+            if not file_path or "Failed" in file_path or "Error" in file_path or not os.path.exists(file_path):
+                return {"content": [{"type": "text", "text": json.dumps({"error": file_path or "Download failed"}, indent=2)}]}
+            # Generate download URL
+            filename = Path(file_path).name
+            download_url = f"http://{HOST}:{PORT}/downloads/{filename}"
+            return {"content": [{"type": "text", "text": json.dumps({"file_path": file_path, "download_url": download_url}, indent=2)}]}
+        except Exception as e:
+            return {"content": [{"type": "text", "text": json.dumps({"error": str(e)}, indent=2)}]}
         
     elif tool_info["type"] == "read":
         paper_id = str(arguments.get("paper_id", ""))
@@ -1081,6 +1109,9 @@ routes = [
     # Direct MCP HTTP Transport
     Route("/mcp", mcp_endpoint, methods=["POST"]),
     Route("/messages", mcp_messages, methods=["POST"]),
+    
+    # Static files for downloaded PDFs
+    Mount("/downloads", StaticFiles(directory=str(DOWNLOADS_DIR)), name="downloads"),
 ]
 
 # CORS middleware configuration

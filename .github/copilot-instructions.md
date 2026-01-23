@@ -1,5 +1,5 @@
 # Copilot Instructions for paper-search-mcp
-
+WICHTIG: VERWENDE IMMER DAS RICHTIGE PYTHON ENVIROMENT!!! NICHT DAS SYSTEM PYTHON!!!
 ## Project Overview
 MCP (Model Context Protocol) server providing tools to search and download academic papers from multiple platforms. Built with `fastmcp` and designed for integration with LLMs like Claude Desktop.
 
