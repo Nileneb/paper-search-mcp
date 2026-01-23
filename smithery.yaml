@@ -1,13 +1,66 @@
 # Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
 
+# Standard stdio transport (default)
 startCommand:
   type: stdio
   configSchema:
-    # JSON Schema defining the configuration options for the MCP.
     type: object
-    properties: {}
+    properties:
+      semantic_scholar_api_key:
+        type: string
+        description: "Optional API key for enhanced Semantic Scholar rate limits"
+    required: []
   commandFunction:
-    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
     |-
-    (config) => ({ command: 'python', args: ['-m', 'paper_search_mcp.server'] })
+    (config) => ({ 
+      command: 'python', 
+      args: ['-m', 'paper_search_mcp.server'],
+      env: config.semantic_scholar_api_key ? { SEMANTIC_SCHOLAR_API_KEY: config.semantic_scholar_api_key } : {}
+    })
   exampleConfig: {}
+
+# HTTP/SSE transport configuration (alternative)
+# To use HTTP transport, deploy with:
+#   uvicorn paper_search_mcp.server_http:app --host 0.0.0.0 --port 8090
+httpTransport:
+  enabled: true
+  configSchema:
+    type: object
+    properties:
+      host:
+        type: string
+        default: "0.0.0.0"
+        description: "Host to bind the HTTP server"
+      port:
+        type: integer
+        default: 8090
+        description: "Port for the HTTP server"
+      debug:
+        type: boolean
+        default: false
+        description: "Enable debug mode"
+      semantic_scholar_api_key:
+        type: string
+        description: "Optional API key for Semantic Scholar"
+    required: []
+  commandFunction:
+    |-
+    (config) => ({ 
+      command: 'uvicorn', 
+      args: [
+        'paper_search_mcp.server_http:app', 
+        '--host', config.host || '0.0.0.0', 
+        '--port', (config.port || 8090).toString()
+      ].concat(config.debug ? ['--reload'] : []),
+      env: config.semantic_scholar_api_key ? { SEMANTIC_SCHOLAR_API_KEY: config.semantic_scholar_api_key } : {}
+    })
+  endpoints:
+    health: "/health"
+    platforms: "/api/platforms"
+    search: "/api/search/{platform}"
+    download: "/api/download/{platform}"
+    read: "/api/read/{platform}"
+    paper: "/api/paper/{platform}/{paper_id}"
+    sse: "/sse"
+    mcp: "/mcp"
+    messages: "/messages"

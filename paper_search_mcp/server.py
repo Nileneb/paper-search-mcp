@@ -431,4 +431,4 @@ async def read_crossref_paper(paper_id: str, save_path: str = "./downloads") -> 
 
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    mcp.run(transport="sse")

@@ -1,6 +1,6 @@
 # Paper Search MCP
 
-A Model Context Protocol (MCP) server for searching and downloading academic papers from multiple sources, including arXiv, PubMed, bioRxiv, and Sci-Hub (optional). Designed for seamless integration with large language models like Claude Desktop.
+A Model Context Protocol (MCP) server for searching and downloading academic papers from multiple sources, including arXiv, PubMed, bioRxiv, and more. Designed for seamless integration with large language models like Claude Desktop. **Now with HTTP/SSE support for n8n, webhooks, and IoT clients!**
 
 ![PyPI](https://img.shields.io/pypi/v/paper-search-mcp.svg) ![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 [![smithery badge](https://smithery.ai/badge/@openags/paper-search-mcp)](https://smithery.ai/server/@openags/paper-search-mcp)
@@ -15,13 +15,12 @@ A Model Context Protocol (MCP) server for searching and downloading academic pap
   - [Quick Start](#quick-start)
     - [Install Package](#install-package)
     - [Configure Claude Desktop](#configure-claude-desktop)
+  - [HTTP Server Mode](#http-server-mode)
   - [For Development](#for-development)
-    - [Setup Environment](#setup-environment)
-    - [Install Dependencies](#install-dependencies)
+- [HTTP API](#http-api)
 - [Contributing](#contributing)
 - [Demo](#demo)
 - [License](#license)
-- [TODO](#todo)
 
 ---
 
@@ -33,17 +32,20 @@ A Model Context Protocol (MCP) server for searching and downloading academic pap
 
 ## Features
 
-- **Multi-Source Support**: Search and download papers from arXiv, PubMed, bioRxiv, medRxiv, Google Scholar, IACR ePrint Archive, Semantic Scholar.
+- **Multi-Source Support**: Search and download papers from arXiv, PubMed, bioRxiv, medRxiv, Google Scholar, IACR ePrint Archive, Semantic Scholar, and CrossRef.
+- **Dual Transport**: Supports both stdio (for Claude Desktop) and HTTP/SSE (for web apps, n8n, webhooks).
+- **REST API**: Full HTTP REST API for searching, downloading, and reading papers.
+- **Server-Sent Events (SSE)**: Real-time progress updates for long-running operations.
+- **MCP over HTTP**: JSON-RPC 2.0 interface for MCP protocol compatibility.
 - **Standardized Output**: Papers are returned in a consistent dictionary format via the `Paper` class.
 - **Asynchronous Tools**: Efficiently handles network requests using `httpx`.
-- **MCP Integration**: Compatible with MCP clients for LLM context enhancement.
 - **Extensible Design**: Easily add new academic platforms by extending the `academic_platforms` module.
 
 ---
 
 ## Installation
 
-`paper-search-mcp` can be installed using `uv` or `pip`. Below are two approaches: a quick start for immediate use and a detailed setup for development.
+`paper-search-mcp` can be installed using `uv` or `pip`. Below are options for immediate use and development.
 
 ### Installing via Smithery
 
@@ -53,9 +55,9 @@ To install paper-search-mcp for Claude Desktop automatically via [Smithery](http
 npx -y @smithery/cli install @openags/paper-search-mcp --client claude
 ```
 
-### Quick Start
+### Quick Start (stdio mode)
 
-For users who want to quickly run the server:
+For users who want to quickly run the server with Claude Desktop:
 
 1. **Install Package**:
 
@@ -78,13 +80,46 @@ For users who want to quickly run the server:
            "paper_search_mcp.server"
          ],
          "env": {
-           "SEMANTIC_SCHOLAR_API_KEY": "" // Optional: For enhanced Semantic Scholar features
+           "SEMANTIC_SCHOLAR_API_KEY": "" 
          }
        }
      }
    }
    ```
    > Note: Replace `/path/to/your/paper-search-mcp` with your actual installation path.
+
+### HTTP Server Mode
+
+For integration with n8n, webhooks, web applications, or IoT clients:
+
+1. **Start the HTTP Server**:
+
+   ```bash
+   # Using the start script
+   ./start_server.sh http
+
+   # Or using uvicorn directly
+   uvicorn paper_search_mcp.server_http:app --host 0.0.0.0 --port 8090
+
+   # Or using Python
+   python -m paper_search_mcp.server_http
+   ```
+
+2. **Using Docker**:
+
+   ```bash
+   docker build -t paper-search-mcp .
+   docker run -p 8090:8090 paper-search-mcp
+   ```
+
+3. **Environment Variables**:
+
+   | Variable | Default | Description |
+   |----------|---------|-------------|
+   | `PAPER_SEARCH_HOST` | `0.0.0.0` | Host to bind to |
+   | `PAPER_SEARCH_PORT` | `8090` | Port to bind to |
+   | `PAPER_SEARCH_DEBUG` | `false` | Enable debug mode |
+   | `SEMANTIC_SCHOLAR_API_KEY` | - | Optional API key |
 
 ### For Development
 
@@ -109,11 +144,81 @@ For developers who want to modify the code or contribute:
 
    ```bash
    # Install project in editable mode
-   uv add -e .
+   uv pip install -e .
 
-   # Add development dependencies (optional)
-   uv add pytest flake8
+   # Run tests
+   pytest tests/
    ```
+
+---
+
+## HTTP API
+
+When running in HTTP mode, the following endpoints are available:
+
+### Quick Reference
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/api/platforms` | GET | List available platforms |
+| `/api/search/{platform}` | POST/GET | Search papers |
+| `/api/download/{platform}` | POST | Download PDF |
+| `/api/read/{platform}` | POST | Extract text from PDF |
+| `/api/paper/{platform}/{id}` | GET | Get paper details |
+| `/sse` | GET | Server-Sent Events stream |
+| `/mcp` | POST | MCP JSON-RPC endpoint |
+
+### Example: Search Papers
+
+```bash
+curl -X POST http://localhost:8090/api/search/arxiv \
+  -H "Content-Type: application/json" \
+  -d '{"query": "machine learning", "max_results": 5}'
+```
+
+### Example: SSE Connection (JavaScript)
+
+```javascript
+const eventSource = new EventSource('http://localhost:8090/sse');
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log(`Event: ${data.type}`, data.data);
+};
+```
+
+### Example: MCP over HTTP
+
+```bash
+curl -X POST http://localhost:8090/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "search_arxiv",
+      "arguments": {"query": "neural networks", "max_results": 5}
+    }
+  }'
+```
+
+📚 **Full API Documentation**: [docs/API.md](docs/API.md)
+
+---
+
+## Supported Platforms
+
+| Platform | Search | Download | Read |
+|----------|--------|----------|------|
+| arXiv | ✅ | ✅ | ✅ |
+| PubMed | ✅ | ❌ | ❌ |
+| bioRxiv | ✅ | ✅ | ✅ |
+| medRxiv | ✅ | ✅ | ✅ |
+| Google Scholar | ✅ | ❌ | ❌ |
+| IACR ePrint | ✅ | ✅ | ✅ |
+| Semantic Scholar | ✅ | ✅ | ✅ |
+| CrossRef | ✅ | ❌ | ❌ |
 
 ---
 
@@ -129,7 +234,7 @@ We welcome contributions! Here's how to get started:
    ```bash
    git clone https://github.com/yourusername/paper-search-mcp.git
    cd paper-search-mcp
-   pip install -e ".[dev]"  # Install dev dependencies (if added to pyproject.toml)
+   uv pip install -e .
    ```
 
 3. **Make Changes**:
@@ -137,37 +242,20 @@ We welcome contributions! Here's how to get started:
    - Add new platforms in `academic_platforms/`.
    - Update tests in `tests/`.
 
-4. **Submit a Pull Request**:
+4. **Run Tests**:
+
+   ```bash
+   pytest tests/
+   ```
+
+5. **Submit a Pull Request**:
    Push changes and create a PR on GitHub.
 
 ---
 
 ## Demo
 
-<img src="docs\images\demo.png" alt="Demo" width="800">
-
-## TODO
-
-### Planned Academic Platforms
-
-- [√] arXiv
-- [√] PubMed
-- [√] bioRxiv
-- [√] medRxiv
-- [√] Google Scholar
-- [√] IACR ePrint Archive
-- [√] Semantic Scholar
-- [ ] PubMed Central (PMC)
-- [ ] Science Direct
-- [ ] Springer Link
-- [ ] IEEE Xplore
-- [ ] ACM Digital Library
-- [ ] Web of Science
-- [ ] Scopus
-- [ ] JSTOR
-- [ ] ResearchGate
-- [ ] CORE
-- [ ] Microsoft Academic
+<img src="docs/images/demo.png" alt="Demo" width="800">
 
 ---
 

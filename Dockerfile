@@ -2,18 +2,28 @@
 FROM python:3.10-alpine
 
 # Install system dependencies
-RUN apk add --no-cache build-base libffi-dev openssl-dev
+RUN apk add --no-cache build-base libffi-dev openssl-dev bash
 
 WORKDIR /app
 
 # Copy the entire repository
 COPY . .
 
+# Make start script executable
+RUN chmod +x start_server.sh
+
 # Upgrade pip and install dependencies
 RUN pip install --upgrade pip \
     && pip install --no-cache-dir .
 
-# Expose port if necessary (MCP servers use stdio; no port to expose)
+# Expose HTTP port
+EXPOSE 8090
 
-# Command to run the MCP server
-CMD ["python", "-m", "paper_search_mcp.server"]
+# Environment variables with defaults
+ENV PAPER_SEARCH_HOST=0.0.0.0
+ENV PAPER_SEARCH_PORT=8090
+ENV PAPER_SEARCH_DEBUG=false
+
+# Default command runs HTTP server
+# Use: docker run ... paper-search-mcp stdio - for stdio mode
+CMD ["./start_server.sh", "http"]

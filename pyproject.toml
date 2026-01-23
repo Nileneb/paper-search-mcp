@@ -21,6 +21,11 @@ dependencies = [
     "beautifulsoup4>=4.12.0",
     "lxml>=4.9.0", # Better HTML parser for BeautifulSoup
     "httpx[socks]>=0.28.1",
+    "pytest>=9.0.2",
+    "flake8>=7.3.0",
+    # HTTP/SSE Transport dependencies
+    "uvicorn>=0.24.0",
+    "starlette>=0.32.0",
 ]
 
 [tool.hatch.build.targets.wheel]
